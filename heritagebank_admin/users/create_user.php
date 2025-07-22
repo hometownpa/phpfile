@@ -11,15 +11,43 @@ if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== tru
 $message = '';
 $message_type = ''; // 'success' or 'error'
 
-// Define the upload directory relative to your project root
-// If create_user.php is in HERITAGEBANK/HERITAGEBANK_ADMIN/users/
-// We need to go up two levels to HERITAGEBANK/ and then into uploads/profile_images/
+// Define the upload directory using an absolute path relative to the Railway /app root
+// This is already correct: /app/uploads/profile_images/
 define('UPLOAD_DIR', '/app/uploads/profile_images/');
 
-// Create the upload directory if it doesn't exist
+// Attempt to create the upload directory if it doesn't exist
+// and set permissions more aggressively if initial creation fails.
 if (!is_dir(UPLOAD_DIR)) {
-    mkdir(UPLOAD_DIR, 0777, true); // Create recursively and set permissions
+    // Attempt creation with full permissions (0777) and recursively (true)
+    if (!mkdir(UPLOAD_DIR, 0777, true)) {
+        // If mkdir failed, log an error or handle it. For debugging on Railway:
+        error_log('PHP Error: Failed to create upload directory: ' . UPLOAD_DIR . '. Please check underlying permissions or path.');
+        // Consider redirecting or showing a user-friendly error instead of dying directly
+        // header('Location: error_page.php?msg=upload_dir_creation_failed');
+        // exit();
+    }
 }
+
+// *** CRUCIAL ADDITION/MODIFICATION HERE ***
+// After creation (or if it already existed), ensure permissions are explicitly set to 0777.
+// This is the most likely missing piece for "Permission denied" on Railway.
+// This `chmod` should happen even if the directory already existed, to re-assert permissions.
+if (!chmod(UPLOAD_DIR, 0777)) {
+    // If chmod failed, log an error or handle it. For debugging on Railway:
+    error_log('PHP Error: Failed to set permissions on upload directory: ' . UPLOAD_DIR . '.');
+    // Consider redirecting or showing a user-friendly error instead of dying directly
+    // header('Location: error_page.php?msg=upload_dir_permissions_failed');
+    // exit();
+}
+
+// Now proceed with your file upload logic:
+// (Your move_uploaded_file call will be here)
+// Example:
+// if (move_uploaded_file($file_tmp_path, $target_file_path)) {
+//     // ... success ...
+// } else {
+//     // ... failure ...
+// }
 
 // --- Define HomeTown Bank's Fixed Identifiers (Fictional) ---
 // These would be real bank details in a production system.
