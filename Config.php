@@ -15,7 +15,7 @@
 
 // --- Database Configuration ---
 // Attempt to get DATABASE_URL from environment variables (set by Railway/Pxxl.app)
-$databaseUrl = getenv('DATABASE_URL');
+$databaseUrl = getenv('mysql://root:wyJMBTarBnOjfuDbqCesJWbYkXJktUBW@gondola.proxy.rlwy.net:49719/railway');
 
 if ($databaseUrl) {
     // If DATABASE_URL is set (on deployed environment)
