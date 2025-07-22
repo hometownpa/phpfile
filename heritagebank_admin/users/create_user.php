@@ -23,31 +23,17 @@ if (!is_dir(UPLOAD_DIR)) {
         // If mkdir failed, log an error or handle it. For debugging on Railway:
         error_log('PHP Error: Failed to create upload directory: ' . UPLOAD_DIR . '. Please check underlying permissions or path.');
         // Consider redirecting or showing a user-friendly error instead of dying directly
-        // header('Location: error_page.php?msg=upload_dir_creation_failed');
-        // exit();
+        // For production, you might want to show a generic error or redirect.
+        // For development/debugging, logging is fine.
     }
 }
 
-// *** CRUCIAL ADDITION/MODIFICATION HERE ***
-// After creation (or if it already existed), ensure permissions are explicitly set to 0777.
-// This is the most likely missing piece for "Permission denied" on Railway.
-// This `chmod` should happen even if the directory already existed, to re-assert permissions.
-if (!chmod(UPLOAD_DIR, 0777)) {
-    // If chmod failed, log an error or handle it. For debugging on Railway:
-    error_log('PHP Error: Failed to set permissions on upload directory: ' . UPLOAD_DIR . '.');
-    // Consider redirecting or showing a user-friendly error instead of dying directly
-    // header('Location: error_page.php?msg=upload_dir_permissions_failed');
-    // exit();
-}
-
-// Now proceed with your file upload logic:
-// (Your move_uploaded_file call will be here)
-// Example:
-// if (move_uploaded_file($file_tmp_path, $target_file_path)) {
-//     // ... success ...
-// } else {
-//     // ... failure ...
-// }
+// *** REMOVED THE CHMOD LINE HERE AS IT'S CAUSING "OPERATION NOT PERMITTED" ***
+// This `chmod` call is often not allowed in containerized environments like Railway.
+// The `mkdir` call above (with 0777) usually sets sufficient permissions for PHP
+// to write to the directory if the underlying file system allows it.
+// If you still face "Permission denied" errors after removing this,
+// you likely need to configure persistent storage/volumes on Railway.
 
 // --- Define HomeTown Bank's Fixed Identifiers (Fictional) ---
 // These would be real bank details in a production system.
@@ -67,7 +53,7 @@ define('HOMETOWN_BANK_EUR_BANK_CODE_BBAN', '50070010');
 // For US (USD) accounts - BIC must be 11 chars
 define('HOMETOWN_BANK_USD_BIC', 'HOMTUS33XXX'); // Fictional BIC for HomeTown Bank USA
 // ABA Routing Transit Number (RTN) is 9 digits for US banks
-define('HOMETOWN_BANK_USD_ROUTING_NUMBER_PREFIX', '021000000'); // Fictional: Example prefix, usually a real RTN
+// We will generate the full 9 digits dynamically per account to make them unique.
 
 /**
  * Helper function to generate a unique numeric ID of a specific length.
@@ -277,13 +263,10 @@ function generateUniqueEurIban($conn, string $internalAccountNumber10Digits): st
  * @param string $internalAccountNumberForUSD The internal account number, will be padded/truncated as needed.
  * @return array|false The unique US "IBAN" (BBAN) and its routing number, or false on error.
  */
-function generateUniqueUsdIban($conn, string $internalAccountNumberForUSD): array|false { // <--- Changed return type here
+function generateUniqueUsdIban($conn, string $internalAccountNumberForUSD): array|false {
     $countryCode = 'US';
-    // The routing number itself needs to be generated and unique for each account.
-    // Previously, HOMETOWN_BANK_USD_ROUTING_NUMBER_PREFIX was used, implying a static prefix.
-    // To make it unique per account and align with typical US RTN, let's generate it fully here.
-    // A real RTN should pass a checksum algorithm (Modulus 10, position weighting), but for simulation, we'll just ensure uniqueness.
 
+    // The routing number needs to be generated and unique for each account (or at least for the first of a user).
     $generatedRoutingNumber = generateUniqueNumericId($conn, 'accounts', 'routing_number', 9);
     if ($generatedRoutingNumber === false) {
         error_log("Failed to generate a unique US Routing Number for IBAN.");
@@ -347,13 +330,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // fund_account_type is now optional. Only use if initial_balance > 0.
     // If not selected AND initial_balance is > 0, we can default it or return an error.
-    // For now, if initial_balance > 0 and fund_account_type is empty, we'll default it to 'Checking'.
     $fund_account_type = trim($_POST['fund_account_type'] ?? '');
 
     // Admin determined creation timestamp
-    $admin_created_at = trim($_POST['admin_created_at'] ?? '');
+    $admin_created_at_raw = trim($_POST['admin_created_at'] ?? '');
+    // Ensure admin_created_at is in 'YYYY-MM-DD HH:MM:SS' format for MySQL
+    $admin_created_at_dt = null;
+    if (!empty($admin_created_at_raw)) {
+        // Try parsing from datetime-local (YYYY-MM-DDTHH:MM)
+        $admin_created_at_dt = DateTime::createFromFormat('Y-m-d\TH:i', $admin_created_at_raw);
+        if (!$admin_created_at_dt) {
+            // Try parsing from YYYY-MM-DD HH:MM:SS (if input was manually typed or from another source)
+            $admin_created_at_dt = DateTime::createFromFormat('Y-m-d H:i:s', $admin_created_at_raw);
+        }
+        if (!$admin_created_at_dt) {
+            // Fallback if parsing fails for some reason
+            $admin_created_at_dt = new DateTime(); // Current datetime
+        }
+    } else {
+        $admin_created_at_dt = new DateTime(); // Default to current datetime if empty
+    }
+    $admin_created_at = $admin_created_at_dt->format('Y-m-d H:i:s');
+
 
     $profile_image_path = null; // To store the path of the uploaded image
+    $uploaded_file_full_path = null; // To store the full path for deletion on rollback
+
 
     // --- Basic Validation ---
     // Removed initial_balance and fund_account_type from required fields check
@@ -378,10 +380,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (!preg_match("/^\d{4}-\d{2}-\d{2}$/", $date_of_birth) || !strtotime($date_of_birth)) { // Validate Date of Birth format
         $message = 'Invalid Date of Birth format. Please use YYYY-MM-DD.';
         $message_type = 'error';
-    } elseif (!DateTime::createFromFormat('Y-m-d\TH:i', $admin_created_at) && !DateTime::createFromFormat('Y-m-d H:i:s', $admin_created_at)) {
-        // Validate admin_created_at format for datetime-local or common datetime string
-        $message = 'Invalid "Created At" date/time format. Please use YYYY-MM-DDTHH:MM (e.g., 2025-07-01T14:30).';
-        $message_type = 'error';
     }
     // New validation for optional initial funding: if balance > 0, account type must be selected
     elseif ($initial_balance > 0 && empty($fund_account_type)) {
@@ -389,7 +387,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $message_type = 'error';
     }
     else {
-        // --- Handle Profile Image Upload ---
+        // --- Handle Profile Image Upload (Optional) ---
+        // This block only executes if a file was selected AND there were no upload errors.
         if (isset($_FILES['profile_image']) && $_FILES['profile_image']['error'] === UPLOAD_ERR_OK) {
             $file_tmp_path = $_FILES['profile_image']['tmp_name'];
             $file_name = $_FILES['profile_image']['name'];
@@ -412,6 +411,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (move_uploaded_file($file_tmp_path, $target_file_path)) {
                     // Store the relative path to be saved in the database
                     $profile_image_path = 'uploads/profile_images/' . $new_file_name;
+                    // Store the absolute path for potential deletion on rollback
+                    $uploaded_file_full_path = $target_file_path;
                 } else {
                     $message = 'Failed to upload profile image.';
                     $message_type = 'error';
@@ -451,11 +452,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (empty($username_for_db) || strlen($username_for_db) > 50) { // Assuming username max length is 50
                 $username_for_db = strtolower(explode('@', $email)[0]);
             }
-            // Ensure username is unique - this part is missing in the original, adding a basic check
+            // Ensure username is unique
             $original_username = $username_for_db;
             $counter = 1;
             while (true) {
                 $stmt_check_username = mysqli_prepare($conn, "SELECT 1 FROM users WHERE username = ?");
+                if (!$stmt_check_username) {
+                    $message = "Failed to prepare statement for username uniqueness check: " . mysqli_error($conn);
+                    $message_type = 'error';
+                    $transaction_success = false;
+                    goto end_of_post_processing;
+                }
                 mysqli_stmt_bind_param($stmt_check_username, "s", $username_for_db);
                 mysqli_stmt_execute($stmt_check_username);
                 mysqli_stmt_store_result($stmt_check_username);
@@ -467,7 +474,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $username_for_db = $original_username . $counter++;
                 if (strlen($username_for_db) > 50) { // Prevent excessively long usernames
-                    $username_for_db = uniqid('user_'); // Final fallback
+                    $username_for_db = uniqid('user_'); // Final fallback if collision is persistent or name too long
                 }
             }
 
@@ -526,11 +533,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $common_sort_code = NULL; // Not applicable for US sort code
                         $common_swift_bic = HOMETOWN_BANK_USD_BIC;
                         // For USD, the routing number is generated *inside* generateUniqueUsdIban and returned.
-                        // We will store this generated routing number in the 'sort_code' column for simplicity,
-                        // or you could add a dedicated 'routing_number' column to your 'accounts' table.
-                        // For now, let's use common_routing_number to store the one generated for the first account.
-                        // Note: A single user might have multiple accounts with different routing numbers in a real US bank.
-                        // This simplifies it to one primary routing number for all their accounts of a given currency.
+                        // We will store this generated routing number in the 'routing_number' column.
+                        // We'll capture it here to potentially reuse for multiple USD accounts if applicable.
                     }
 
                     // Prepare INSERT statement for 'accounts' table (prepared once, executed multiple times)
@@ -566,7 +570,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             if ($usd_iban_details !== false) {
                                 $checking_iban = $usd_iban_details['iban'];
                                 $checking_routing_number = $usd_iban_details['routing_number']; // Assign the generated routing number
-                                $common_routing_number = $checking_routing_number; // Store this for display/reuse
+                                $common_routing_number = $checking_routing_number; // Store this for display/reuse for other accounts
                             } else {
                                 $message = "Failed to generate unique USD 'IBAN' and Routing Number for Checking account.";
                                 $message_type = 'error';
@@ -594,10 +598,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $checking_account_type,
                             $checking_initial_balance,
                             $currency,
-                            $checking_sort_code,      // Sort code (for GBP), NULL otherwise
-                            $checking_routing_number, // Routing number (for USD), NULL otherwise
-                            $checking_iban,           // IBAN/BBAN
-                            $common_swift_bic,        // Common SWIFT/BIC
+                            $checking_sort_code,       // Sort code (for GBP), NULL otherwise
+                            $checking_routing_number,  // Routing number (for USD), NULL otherwise
+                            $checking_iban,            // IBAN/BBAN
+                            $common_swift_bic,         // Common SWIFT/BIC
                             $admin_created_at
                         );
                         if (!mysqli_stmt_execute($account_stmt)) {
@@ -636,16 +640,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 // If you need *different* routing numbers per account, you'd call generateUniqueUsdIban here again,
                                 // but that's less typical for a single user's accounts at the same bank.
                                 // If we're reusing common_routing_number, we still need a unique IBAN (BBAN part).
-                                $usd_iban_details_savings = generateUniqueUsdIban($conn, $savings_account_number);
+                                $usd_iban_details_savings = generateUniqueUsdIban($conn, $savings_account_number); // Generate new BBAN part and new routing number temporarily
                                 if ($usd_iban_details_savings !== false) {
-                                     $savings_iban = $usd_iban_details_savings['iban'];
-                                     // Re-use the common routing number that was generated for the first USD account
-                                     $savings_routing_number = $common_routing_number;
+                                   $savings_iban = $usd_iban_details_savings['iban'];
+                                   // Re-use the common routing number that was generated for the first USD account
+                                   $savings_routing_number = $common_routing_number; // This is the key line for reuse
                                 } else {
-                                     $message = "Failed to generate unique USD 'IBAN' for Savings account.";
-                                     $message_type = 'error';
-                                     $transaction_success = false;
-                                     goto end_of_post_processing;
+                                   $message = "Failed to generate unique USD 'IBAN' for Savings account.";
+                                   $message_type = 'error';
+                                   $transaction_success = false;
+                                   goto end_of_post_processing;
                                 }
                             }
 
@@ -687,7 +691,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         if ($transaction_success) {
                             // These are common for the user's accounts based on chosen currency
                             if ($common_sort_code) $accounts_created_messages[] = "User's Common Sort Code: **" . $common_sort_code . "**";
-                            if ($common_routing_number) $accounts_created_messages[] = "User's Common Routing Number: **" . $common_routing_number . "**"; // ADDED
+                            if ($common_routing_number) $accounts_created_messages[] = "User's Common Routing Number: **" . $common_routing_number . "**";
                             if ($common_swift_bic) $accounts_created_messages[] = "User's Common SWIFT/BIC: **" . $common_swift_bic . "**";
                         }
 
@@ -716,8 +720,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 mysqli_rollback($conn);
                 // The error message is already set above
                 // If profile image was uploaded, delete it on rollback
-                if ($profile_image_path && file_exists('../../' . $profile_image_path)) {
-                    unlink('../../' . $profile_image_path);
+                if ($uploaded_file_full_path && file_exists($uploaded_file_full_path)) {
+                    unlink($uploaded_file_full_path);
                 }
             }
             mysqli_autocommit($conn, TRUE); // Re-enable autocommit
@@ -802,11 +806,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="form-group">
                     <label for="profile_image">Profile Image (Max 5MB, JPG, PNG, GIF)</label>
                     <input type="file" id="profile_image" name="profile_image" accept="image/*">
+                    <small>Optional: You can upload a profile picture for the user.</small>
                 </div>
 
                 <div class="form-group">
-                    <label for="routing_number">Routing Number</label>
-                    <input type="text" id="routing_number" name="routing_number_display" value="Auto-generated upon creation" readonly class="readonly-field">
+                    <label for="routing_number_display">Routing Number</label>
+                    <input type="text" id="routing_number_display" name="routing_number_display" value="Auto-generated upon creation" readonly class="readonly-field">
                     <small>This will be automatically generated and assigned to the user's account(s) if USD is selected.</small>
                 </div>
 
@@ -857,5 +862,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             margin-left: 5px;
         }
     </style>
-    </body>
+</body>
 </html>
