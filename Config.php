@@ -13,41 +13,63 @@
  * for production deployments.
  */
 
-// Database credentials
-define('DB_HOST', 'localhost'); // Your database host (e.g., 'localhost', '127.0.0.1', or a remote host)
-define('DB_USER', 'root'); // Your database username
-define('DB_PASS', ''); // Your database password
-define('DB_NAME', 'heritagebank_db'); // <--- IMPORTANT: This matches your provided DB_NAME
+// --- Database Configuration ---
+// Attempt to get DATABASE_URL from environment variables (set by Railway/Pxxl.app)
+$databaseUrl = getenv('DATABASE_URL');
+
+if ($databaseUrl) {
+    // If DATABASE_URL is set (on deployed environment)
+    $urlParts = parse_url($databaseUrl);
+
+    define('DB_HOST', $urlParts['host'] ?? 'localhost');
+    define('DB_USER', $urlParts['user'] ?? 'root');
+    define('DB_PASS', $urlParts['pass'] ?? '');
+    // The path usually includes a leading slash, remove it for DB_NAME
+    define('DB_NAME', ltrim($urlParts['path'] ?? '', '/'));
+    // Default MySQL port is 3306, parse_url might not always include 'port'
+    define('DB_PORT', $urlParts['port'] ?? 3306);
+} else {
+    // Fallback for local development (XAMPP) if DATABASE_URL is not set
+    // IMPORTANT: These are your local XAMPP credentials
+    define('DB_HOST', 'localhost');
+    define('DB_USER', 'root');
+    define('DB_PASS', '');
+    define('DB_NAME', 'heritagebank_db');
+    define('DB_PORT', 3306); // Default MySQL port
+}
+
 
 // Optional: Set default timezone if needed (e.g., for logging timestamps)
-date_default_timezone_set('Europe/London'); // Set to UK time (London)
+// Get from environment or default to 'Europe/London'
+date_default_timezone_set(getenv('APP_TIMEZONE') ?: 'Europe/London');
 
 // --- START: Required for Email and Admin Notifications ---
 // Admin Email for notifications
-// IMPORTANT: Change this to your actual admin email
-define('ADMIN_EMAIL', 'hometownbankpa@gmail.com');
+// IMPORTANT: Get from environment for production
+define('ADMIN_EMAIL', getenv('ADMIN_EMAIL') ?: 'hometownbankpa@gmail.com');
 
 // Base URL of your project
 // IMPORTANT: Ensure this matches your project's URL in your browser (e.g., http://localhost/heritagebank)
-define('BASE_URL', 'http://localhost/heritagebank');
+// Get from environment for production
+define('BASE_URL', getenv('BASE_URL') ?: 'http://localhost/heritagebank');
 
 // SMTP Settings for Email Sending (using Gmail)
-// IMPORTANT: Replace with your actual Gmail account and the generated 16-character App Password
-define('SMTP_HOST', 'smtp.gmail.com');
-define('SMTP_USERNAME', 'hometownbankpa@gmail.com'); // Your full Gmail address
-define('SMTP_PASSWORD', 'svkh egmo bwqk hick'); // The App Password generated from Google Security
-define('SMTP_PORT', 587); // Use 587 for TLS
-define('SMTP_ENCRYPTION', 'tls'); // Use 'tls' for port 587 or 'ssl' for port 465
-define('SMTP_FROM_EMAIL', 'hometownbankpa@gmail.com'); // Should match SMTP_USERNAME for Gmail
-define('SMTP_FROM_NAME', 'HomeTown Bank PA');
+// IMPORTANT: Get these from environment variables for production!
+define('SMTP_HOST', getenv('SMTP_HOST') ?: 'smtp.gmail.com');
+define('SMTP_USERNAME', getenv('SMTP_USERNAME') ?: 'hometownbankpa@gmail.com'); // Your full Gmail address
+define('SMTP_PASSWORD', getenv('SMTP_PASSWORD') ?: 'svkh egmo bwqk hick'); // The App Password generated from Google Security
+define('SMTP_PORT', getenv('SMTP_PORT') ?: 587); // Use 587 for TLS
+define('SMTP_ENCRYPTION', getenv('SMTP_ENCRYPTION') ?: 'tls'); // Use 'tls' for port 587 or 'ssl' for port 465
+define('SMTP_FROM_EMAIL', getenv('SMTP_FROM_EMAIL') ?: 'hometownbankpa@gmail.com'); // Should match SMTP_USERNAME for Gmail
+define('SMTP_FROM_NAME', getenv('SMTP_FROM_NAME') ?: 'HomeTown Bank PA');
 // --- END: Required for Email and Admin Notifications ---
 
 
 // Optional: Error Reporting (adjust for production)
-// For development: display all errors
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
+// Control via APP_DEBUG environment variable
+ini_set('display_errors', getenv('APP_DEBUG') ? 1 : 0);
+ini_set('display_startup_errors', getenv('APP_DEBUG') ? 1 : 0);
+error_reporting(getenv('APP_DEBUG') ? E_ALL : 0);
 
 // For production: disable display errors, log errors instead
 // ini_set('display_errors', 0);
@@ -57,19 +79,13 @@ error_reporting(E_ALL);
 // --- START: Required for Currency Exchange and Transfer Rules ---
 
 // Currency Exchange Rate API Configuration
-// You MUST sign up for a free API key from a service like exchangerate-api.com
-// or openexchangerates.org. Replace 'YOUR_ACTUAL_API_KEY_HERE' with your key.
-// Note: Free tiers may have limitations (e.g., rate limits, fixed base currency).
-define('EXCHANGE_RATE_API_BASE_URL', 'https://v6.exchangerate-api.com/v6/');
-define('EXCHANGE_RATE_API_KEY', 'YOUR_ACTUAL_API_KEY_HERE'); // <-- GET YOUR FREE KEY FROM exchangerate-api.com
+// IMPORTANT: Get API key from environment for production!
+define('EXCHANGE_RATE_API_BASE_URL', getenv('EXCHANGE_RATE_API_BASE_URL') ?: 'https://v6.exchangerate-api.com/v6/');
+define('EXCHANGE_RATE_API_KEY', getenv('EXCHANGE_RATE_API_KEY') ?: 'YOUR_ACTUAL_API_KEY_HERE'); // <-- GET YOUR FREE KEY FROM exchangerate-api.com
 
 // --- IMPORTANT CHANGE: Define explicitly the allowed currencies for ALL transfers. ---
 // This enforces that all transfers (internal and external) can ONLY be made in GBP or EUR.
 define('ALLOWED_TRANSFER_CURRENCIES', ['GBP', 'EUR', 'USD']);
-
-// The EXTERNAL_TRANSFER_ALLOWED_CURRENCIES constant is now redundant if ALLOWED_TRANSFER_CURRENCIES
-// is the strict rule for all transfers, so it's removed to avoid confusion.
-// If you ever need different rules for internal vs. external, you could re-introduce it.
 
 // Optional: Define a list of all currencies your bank internally supports for accounts.
 // This can be useful for dropdowns or validation across your application.
