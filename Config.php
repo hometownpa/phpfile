@@ -15,7 +15,7 @@
 
 // --- Database Configuration ---
 // Get the variable provided by Railway (MYSQL_PUBLIC_URL)
-$railwayProvidedDbUrl = getenv('MYSQL_PUBLIC_URL');
+$railwayProvidedDbUrl = getenv('MYSQL_CONNECTION_STRING');
 
 // For PXXL application's internal use, we'll assign it to a variable name it expects,
 // or directly use it to define constants.
