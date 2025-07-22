@@ -1,0 +1,17 @@
+# Sensitive configuration files (should NOT be pushed)
+.env
+config.php # If this file contains database credentials directly
+database_creds.php
+
+# Composer dependencies
+/vendor/
+
+# Log files
+*.log
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# IDE-specific files
+.vscode/ # Or .idea/ for other IDEs
