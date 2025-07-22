@@ -65,7 +65,7 @@ define('EXCHANGE_RATE_API_KEY', 'YOUR_ACTUAL_API_KEY_HERE'); // <-- GET YOUR FRE
 
 // --- IMPORTANT CHANGE: Define explicitly the allowed currencies for ALL transfers. ---
 // This enforces that all transfers (internal and external) can ONLY be made in GBP or EUR.
-define('ALLOWED_TRANSFER_CURRENCIES', ['GBP', 'EUR']);
+define('ALLOWED_TRANSFER_CURRENCIES', ['GBP', 'EUR', 'USD']);
 
 // The EXTERNAL_TRANSFER_ALLOWED_CURRENCIES constant is now redundant if ALLOWED_TRANSFER_CURRENCIES
 // is the strict rule for all transfers, so it's removed to avoid confusion.

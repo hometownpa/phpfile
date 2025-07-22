@@ -1,7 +1,6 @@
 # Sensitive configuration files (should NOT be pushed)
 .env
-config.php # If this file contains database credentials directly
-database_creds.php
+# database_creds.php # Keep this line if you have another file with hardcoded credentials
 
 # Composer dependencies
 /vendor/
@@ -14,4 +13,5 @@ database_creds.php
 Thumbs.db
 
 # IDE-specific files
-.vscode/ # Or .idea/ for other IDEs
+.vscode/
+.idea/

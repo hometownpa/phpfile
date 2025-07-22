@@ -14,7 +14,7 @@ $message_type = ''; // 'success' or 'error'
 // Define the upload directory relative to your project root
 // If create_user.php is in HERITAGEBANK/HERITAGEBANK_ADMIN/users/
 // We need to go up two levels to HERITAGEBANK/ and then into uploads/profile_images/
-define('UPLOAD_DIR', '../../uploads/profile_images/');
+define('UPLOAD_DIR', '/app/uploads/profile_images/');
 
 // Create the upload directory if it doesn't exist
 if (!is_dir(UPLOAD_DIR)) {
